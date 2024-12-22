@@ -5,6 +5,7 @@ import Sidebar from './components/Sidebar';
 import DocumentProcessor from './DocumentProcessor';
 import ExperimentalOCR from './ExperimentalOCR'; // New component
 import History from './History';
+import Workflows from './Workflows';
 
 const App: React.FC = () => {
   return (
@@ -16,6 +17,7 @@ const App: React.FC = () => {
             <Route path="/" element={<DocumentProcessor />} />
             <Route path="/experimental-ocr" element={<ExperimentalOCR />} />
             <Route path="/history" element={<History />} />
+            <Route path="/workflows" element={<Workflows />} />
           </Routes>
         </div>
       </div>

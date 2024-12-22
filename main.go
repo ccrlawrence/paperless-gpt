@@ -176,6 +176,10 @@ func main() {
 		api.GET("/modifications", app.getModificationHistoryHandler)
 		api.POST("/undo-modification/:id", app.undoModificationHandler)
 
+		// Workflow actions
+		api.GET("/workflows", app.getWorkflowsHandler)
+		api.POST("/workflows", app.setWorkflowsHandler)
+
 		// Get public Paperless environment (as set in environment variables)
 		api.GET("/paperless-url", func(c *gin.Context) {
 			baseUrl := os.Getenv("PAPERLESS_PUBLIC_URL")

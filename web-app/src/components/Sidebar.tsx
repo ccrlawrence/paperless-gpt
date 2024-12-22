@@ -3,7 +3,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import "./Sidebar.css";
 import { Link, useLocation } from 'react-router-dom';
 import { Icon } from '@mdi/react';
-import { mdiHomeOutline, mdiTextBoxSearchOutline, mdiHistory } from '@mdi/js';
+import { mdiHomeOutline, mdiTextBoxSearchOutline, mdiHistory, mdiArrowRightDropCircleOutline } from '@mdi/js';
 import logo from "../assets/logo.svg";
 
 
@@ -47,6 +47,8 @@ const Sidebar: React.FC<SidebarProps> = ({ onSelectPage }) => {
   if (ocrEnabled) {
     menuItems.push({ name: 'ocr', path: '/experimental-ocr', icon: mdiTextBoxSearchOutline, title: 'OCR' });
   }
+
+  menuItems.push({ name: 'workflows', path: '/workflows', icon: mdiArrowRightDropCircleOutline, title: 'Workflows' });
 
   return (
     <div className={`sidebar min-w-[64px] ${collapsed ? "collapsed" : ""}`}>

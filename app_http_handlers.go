@@ -329,3 +329,43 @@ func (app *App) undoModificationHandler(c *gin.Context) {
 	// Else all was ok
 	c.Status(http.StatusOK)
 }
+
+// Workflows section
+
+func (app *App) getWorkflowsHandler(c *gin.Context) {
+	workflows, err := GetAllWorkflows(app.Database)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve workflows"})
+		log.Errorf("Failed to retrieve workflows: %v", err)
+		return
+	}
+	c.JSON(http.StatusOK, workflows)
+}
+
+// This deletes all workflows and inserts the new ones
+func (app *App) setWorkflowsHandler(c *gin.Context) {
+	var workflows []Workflow
+	if err := c.ShouldBindJSON(&workflows); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload"})
+		log.Errorf("Invalid request payload: %v", err)
+		return
+	}
+
+	log.Debugf("Received workflows: %+v", workflows)
+
+	err := DeleteAllWorkflows(app.Database)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete existing workflows"})
+		log.Errorf("Failed to delete existing workflows: %v", err)
+		return
+	}
+
+	err = InsertWorkflows(app.Database, workflows)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to insert new workflows"})
+		log.Errorf("Failed to insert new workflows: %v", err)
+		return
+	}
+
+	c.Status(http.StatusOK)
+}

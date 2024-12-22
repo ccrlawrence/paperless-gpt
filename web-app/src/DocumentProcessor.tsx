@@ -1,6 +1,6 @@
 import axios from "axios";
 import React, { useCallback, useEffect, useState } from "react";
-import "react-tag-autocomplete/example/src/styles.css"; // Ensure styles are loaded
+import "./components/react-tag-autocomplete.css" // Move to local css
 import DocumentsToProcess from "./components/DocumentsToProcess";
 import NoDocuments from "./components/NoDocuments";
 import SuccessModal from "./components/SuccessModal";
