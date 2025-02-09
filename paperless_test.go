@@ -9,7 +9,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -54,6 +53,12 @@ func newTestEnv(t *testing.T) *testEnv {
 	// Initialize the PaperlessClient with the mock server URL
 	env.client = NewPaperlessClient(env.server.URL, "test-token")
 	env.client.HTTPClient = env.server.Client()
+
+	// Add mock response for /api/correspondents/
+	env.setMockResponse("/api/correspondents/", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"results": [{"id": 1, "name": "Alpha"}, {"id": 2, "name": "Beta"}]}`))
+	})
 
 	return env
 }
@@ -174,42 +179,20 @@ func TestGetDocumentsByTags(t *testing.T) {
 
 	// Mock data for documents
 	documentsResponse := GetDocumentsApiResponse{
-		Results: []struct {
-			ID                  int           `json:"id"`
-			Correspondent       interface{}   `json:"correspondent"`
-			DocumentType        interface{}   `json:"document_type"`
-			StoragePath         interface{}   `json:"storage_path"`
-			Title               string        `json:"title"`
-			Content             string        `json:"content"`
-			Tags                []int         `json:"tags"`
-			Created             time.Time     `json:"created"`
-			CreatedDate         string        `json:"created_date"`
-			Modified            time.Time     `json:"modified"`
-			Added               time.Time     `json:"added"`
-			ArchiveSerialNumber interface{}   `json:"archive_serial_number"`
-			OriginalFileName    string        `json:"original_file_name"`
-			ArchivedFileName    string        `json:"archived_file_name"`
-			Owner               int           `json:"owner"`
-			UserCanChange       bool          `json:"user_can_change"`
-			Notes               []interface{} `json:"notes"`
-			SearchHit           struct {
-				Score          float64 `json:"score"`
-				Highlights     string  `json:"highlights"`
-				NoteHighlights string  `json:"note_highlights"`
-				Rank           int     `json:"rank"`
-			} `json:"__search_hit__"`
-		}{
+		Results: []GetDocumentApiResponseResult{
 			{
-				ID:      1,
-				Title:   "Document 1",
-				Content: "Content 1",
-				Tags:    []int{1, 2},
+				ID:            1,
+				Title:         "Document 1",
+				Content:       "Content 1",
+				Tags:          []int{1, 2},
+				Correspondent: 1,
 			},
 			{
-				ID:      2,
-				Title:   "Document 2",
-				Content: "Content 2",
-				Tags:    []int{2, 3},
+				ID:            2,
+				Title:         "Document 2",
+				Content:       "Content 2",
+				Tags:          []int{2, 3},
+				Correspondent: 2,
 			},
 		},
 	}
@@ -227,7 +210,7 @@ func TestGetDocumentsByTags(t *testing.T) {
 	// Set mock responses
 	env.setMockResponse("/api/documents/", func(w http.ResponseWriter, r *http.Request) {
 		// Verify query parameters
-		expectedQuery := "tags__name__iexact=tag1&tags__name__iexact=tag2"
+		expectedQuery := "tags__name__iexact=tag1&tags__name__iexact=tag2&page_size=25"
 		assert.Equal(t, expectedQuery, r.URL.RawQuery)
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(documentsResponse)
@@ -240,21 +223,23 @@ func TestGetDocumentsByTags(t *testing.T) {
 
 	ctx := context.Background()
 	tags := []string{"tag1", "tag2"}
-	documents, err := env.client.GetDocumentsByTags(ctx, tags)
+	documents, err := env.client.GetDocumentsByTags(ctx, tags, 25)
 	require.NoError(t, err)
 
 	expectedDocuments := []Document{
 		{
-			ID:      1,
-			Title:   "Document 1",
-			Content: "Content 1",
-			Tags:    []string{"tag1", "tag2"},
+			ID:            1,
+			Title:         "Document 1",
+			Content:       "Content 1",
+			Tags:          []string{"tag1", "tag2"},
+			Correspondent: "Alpha",
 		},
 		{
-			ID:      2,
-			Title:   "Document 2",
-			Content: "Content 2",
-			Tags:    []string{"tag2", "tag3"},
+			ID:            2,
+			Title:         "Document 2",
+			Content:       "Content 2",
+			Tags:          []string{"tag2", "tag3"},
+			Correspondent: "Beta",
 		},
 	}
 
@@ -300,18 +285,24 @@ func TestUpdateDocuments(t *testing.T) {
 			OriginalDocument: Document{
 				ID:    1,
 				Title: "Old Title",
-				Tags:  []string{"tag1"},
+				Tags:  []string{"tag1", "tag3", "manual", "removeMe"},
 			},
 			SuggestedTitle: "New Title",
-			SuggestedTags:  []string{"tag2"},
+			SuggestedTags:  []string{"tag2", "tag3"},
+			RemoveTags:     []string{"removeMe"},
 		},
 	}
+	idTag1 := 1
+	idTag2 := 2
+	idTag3 := 4
 	// Mock data for tags
 	tagsResponse := map[string]interface{}{
 		"results": []map[string]interface{}{
-			{"id": 1, "name": "tag1"},
-			{"id": 2, "name": "tag2"},
+			{"id": idTag1, "name": "tag1"},
+			{"id": idTag2, "name": "tag2"},
 			{"id": 3, "name": "manual"},
+			{"id": idTag3, "name": "tag3"},
+			{"id": 5, "name": "removeMe"},
 		},
 		"next": nil,
 	}
@@ -342,7 +333,8 @@ func TestUpdateDocuments(t *testing.T) {
 		// Expected updated fields
 		expectedFields := map[string]interface{}{
 			"title": "New Title",
-			"tags":  []interface{}{float64(2)}, // tag2 ID
+			// do not keep previous tags since the tag generation will already take care to include old ones:
+			"tags": []interface{}{float64(idTag2), float64(idTag3)},
 		}
 
 		assert.Equal(t, expectedFields, updatedFields)
@@ -385,7 +377,7 @@ func TestDownloadDocumentAsImages(t *testing.T) {
 	})
 
 	ctx := context.Background()
-	imagePaths, err := env.client.DownloadDocumentAsImages(ctx, document.ID)
+	imagePaths, err := env.client.DownloadDocumentAsImages(ctx, document.ID, 0)
 	require.NoError(t, err)
 
 	// Verify that exatly one page was extracted
@@ -406,7 +398,7 @@ func TestDownloadDocumentAsImages_ManyPages(t *testing.T) {
 		ID: 321,
 	}
 
-	// Get sample PDF from tests/pdf/sample.pdf
+	// Get sample PDF from tests/pdf/many-pages.pdf
 	pdfFile := "tests/pdf/many-pages.pdf"
 	pdfContent, err := os.ReadFile(pdfFile)
 	require.NoError(t, err)
@@ -422,11 +414,11 @@ func TestDownloadDocumentAsImages_ManyPages(t *testing.T) {
 	env.client.CacheFolder = "tests/tmp"
 	// Clean the cache folder
 	os.RemoveAll(env.client.CacheFolder)
-	imagePaths, err := env.client.DownloadDocumentAsImages(ctx, document.ID)
+	imagePaths, err := env.client.DownloadDocumentAsImages(ctx, document.ID, 50)
 	require.NoError(t, err)
 
-	// Verify that exatly 52 pages were extracted
-	assert.Len(t, imagePaths, 52)
+	// Verify that exatly 50 pages were extracted - the original doc contains 52 pages
+	assert.Len(t, imagePaths, 50)
 	// The path shall end with tests/tmp/document-321/page000.jpg
 	for _, imagePath := range imagePaths {
 		_, err := os.Stat(imagePath)

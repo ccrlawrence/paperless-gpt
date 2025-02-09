@@ -6,12 +6,15 @@ interface DocumentCardProps {
 }
 
 const DocumentCard: React.FC<DocumentCardProps> = ({ document }) => (
-  <div className="bg-white dark:bg-gray-800 shadow-lg shadow-blue-500/50 rounded-md p-4 relative group overflow-hidden">
+  <div className="document-card bg-white dark:bg-gray-800 shadow-lg shadow-blue-500/50 rounded-md p-4 relative group overflow-hidden">
     <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200">{document.title}</h3>
     <p className="text-sm text-gray-600 dark:text-gray-400 mt-2 truncate">
       {document.content.length > 100
         ? `${document.content.substring(0, 100)}...`
         : document.content}
+    </p>
+    <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
+      Correspondent: <span className="font-bold text-blue-600 dark:text-blue-400">{document.correspondent}</span>
     </p>
     <div className="mt-4">
       {document.tags.map((tag) => (
@@ -27,6 +30,9 @@ const DocumentCard: React.FC<DocumentCardProps> = ({ document }) => (
       <div className="text-sm text-white p-2 bg-gray-800 dark:bg-gray-900 rounded-md w-full max-h-full overflow-y-auto">
         <h3 className="text-lg font-semibold text-white">{document.title}</h3>
         <p className="mt-2 whitespace-pre-wrap">{document.content}</p>
+        <p className="mt-2">
+          Correspondent: <span className="font-bold text-blue-400">{document.correspondent}</span>
+        </p>
         <div className="mt-4">
           {document.tags.map((tag) => (
             <span

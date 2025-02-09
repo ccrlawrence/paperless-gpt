@@ -8,6 +8,7 @@ interface SuggestionsReviewProps {
   onTitleChange: (docId: number, title: string) => void;
   onTagAddition: (docId: number, tag: TagOption) => void;
   onTagDeletion: (docId: number, index: number) => void;
+  onCorrespondentChange: (docId: number, correspondent: string) => void;
   onBack: () => void;
   onUpdate: () => void;
   updating: boolean;
@@ -19,11 +20,12 @@ const SuggestionsReview: React.FC<SuggestionsReviewProps> = ({
   onTitleChange,
   onTagAddition,
   onTagDeletion,
+  onCorrespondentChange,
   onBack,
   onUpdate,
   updating,
 }) => (
-  <section>
+  <section className="suggestions-review">
     <h2 className="text-2xl font-semibold text-gray-700 dark:text-gray-200 mb-6">
       Review and Edit Suggested Titles
     </h2>
@@ -36,6 +38,7 @@ const SuggestionsReview: React.FC<SuggestionsReviewProps> = ({
           onTitleChange={onTitleChange}
           onTagAddition={onTagAddition}
           onTagDeletion={onTagDeletion}
+          onCorrespondentChange={onCorrespondentChange}
         />
       ))}
     </div>
