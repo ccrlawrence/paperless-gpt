@@ -40,7 +40,7 @@ const DocumentProcessor: React.FC = () => {
   const [processing, setProcessing] = useState(false);
   const [updating, setUpdating] = useState(false);
   const [isSuccessModalOpen, setIsSuccessModalOpen] = useState(false);
-  const [filterTag, setFilterTag] = useState<string | null>(null);
+  const [filterTags, setFilterTags] = useState<string[] | null>(null);
   const [generateTitles, setGenerateTitles] = useState(true);
   const [generateTags, setGenerateTags] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -48,13 +48,13 @@ const DocumentProcessor: React.FC = () => {
   // Custom hook to fetch initial data
   const fetchInitialData = useCallback(async () => {
     try {
-      const [filterTagRes, documentsRes, tagsRes] = await Promise.all([
-        axios.get<{ tag: string }>("/api/filter-tag"),
+      const [filterTagsRes, documentsRes, tagsRes] = await Promise.all([
+        axios.get<{ tags: string[] }>("/api/filter-tag"),
         axios.get<Document[]>("/api/documents"),
         axios.get<Record<string, number>>("/api/tags"),
       ]);
 
-      setFilterTag(filterTagRes.data.tag);
+      setFilterTags(filterTagsRes.data.tags);
       setDocuments(documentsRes.data);
       const tags = Object.keys(tagsRes.data).map((tag) => ({
         id: tag,
@@ -203,7 +203,7 @@ const DocumentProcessor: React.FC = () => {
 
       {documents.length === 0 ? (
         <NoDocuments
-          filterTag={filterTag}
+          filterTags={filterTags}
           onReload={reloadDocuments}
           processing={processing}
         />

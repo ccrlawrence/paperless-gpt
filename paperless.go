@@ -260,55 +260,80 @@ func (c *PaperlessClient) UpdateDocuments(ctx context.Context, documents []Docum
 		//  Original fields will store any updated fields to store records for
 		originalFields := make(map[string]interface{})
 		updatedFields := make(map[string]interface{})
-		newTags := []int{}
 
-		tags := document.SuggestedTags
-		originalTags := document.OriginalDocument.Tags
+		// newTags := []int{}
 
-		originalTagsJSON, err := json.Marshal(originalTags)
-		if err != nil {
-			log.Errorf("Error marshalling JSON for document %d: %v", documentID, err)
-			return err
-		}
+		// tags := document.SuggestedTags
+		// originalTags := document.OriginalDocument.Tags
 
-		// remove autoTag to prevent infinite loop (even if it is in the original tags)
-		originalTags = removeTagFromList(originalTags, autoTag)
+		// originalTagsJSON, err := json.Marshal(originalTags)
+		// if err != nil {
+		// 	log.Errorf("Error marshalling JSON for document %d: %v", documentID, err)
+		// 	return err
+		// }
 
-		if len(tags) == 0 {
-			tags = originalTags
-		} else {
-			// We have suggested tags to change
-			originalFields["tags"] = originalTags
-			// remove autoTag to prevent infinite loop - this is required in case of undo
-			tags = removeTagFromList(tags, autoTag)
-		}
+		// // remove autoTag to prevent infinite loop (even if it is in the original tags)
+		// originalTags = removeTagFromList(originalTags, autoTag)
 
-		updatedTagsJSON, err := json.Marshal(tags)
-		if err != nil {
-			log.Errorf("Error marshalling JSON for document %d: %v", documentID, err)
-			return err
-		}
+		// if len(tags) == 0 {
+		// 	tags = originalTags
+		// } else {
+		// 	// We have suggested tags to change
+		// 	originalFields["tags"] = originalTags
+		// 	// remove autoTag to prevent infinite loop - this is required in case of undo
+		// 	tags = removeTagFromList(tags, autoTag)
+		// }
 
-		// Map suggested tag names to IDs
-		for _, tagName := range tags {
-			if tagID, exists := availableTags[tagName]; exists {
-				// Skip the tag that we are filtering
-				if !isUndo && tagName == manualTag {
-					continue
+		// updatedTagsJSON, err := json.Marshal(tags)
+		// if err != nil {
+		// 	log.Errorf("Error marshalling JSON for document %d: %v", documentID, err)
+		// 	return err
+		// }
+
+		// // Map suggested tag names to IDs
+		// for _, tagName := range tags {
+		// 	if tagID, exists := availableTags[tagName]; exists {
+		// 		// Skip the tag that we are filtering
+		// 		if !isUndo && tagName == manualTag {
+		// 			continue
+		// 		}
+		// 		newTags = append(newTags, tagID)
+		// 	} else {
+		// 		log.Warnf("Tag '%s' does not exist in paperless-ngx, skipping.", tagName)
+		// 	}
+		// }
+
+		// updatedFields["tags"] = newTags
+
+		// Handle tags first - they should always be pre-set in SuggestedTags
+		originalTags := removeTagFromList(document.OriginalDocument.Tags, autoTag)
+		suggestedTags := removeTagFromList(document.SuggestedTags, autoTag)
+
+		// Only process tags if they're different
+		if !hasSameTags(originalTags, suggestedTags) {
+			tagIDs := make([]int, 0)
+			for _, tagName := range suggestedTags {
+				if tagID, exists := availableTags[tagName]; exists {
+					// Skip manualTag during non-undo operations
+					if !isUndo && tagName == manualTag {
+						continue
+					}
+					tagIDs = append(tagIDs, tagID)
 				}
-				newTags = append(newTags, tagID)
-			} else {
-				log.Warnf("Tag '%s' does not exist in paperless-ngx, skipping.", tagName)
 			}
-		}
 
-		updatedFields["tags"] = newTags
+			originalTagsJSON, _ := json.Marshal(originalTags)
+			// updatedTagsJSON, _ := json.Marshal(suggestedTags)
+
+			originalFields["tags"] = string(originalTagsJSON)
+			updatedFields["tags"] = tagIDs
+		}
 
 		suggestedTitle := document.SuggestedTitle
 		if len(suggestedTitle) > 128 {
 			suggestedTitle = suggestedTitle[:128]
 		}
-		if suggestedTitle != "" {
+		if suggestedTitle != "" && suggestedTitle != document.OriginalDocument.Title {
 			originalFields["title"] = document.OriginalDocument.Title
 			updatedFields["title"] = suggestedTitle
 		} else {
@@ -317,12 +342,18 @@ func (c *PaperlessClient) UpdateDocuments(ctx context.Context, documents []Docum
 
 		// Suggested Content
 		suggestedContent := document.SuggestedContent
-		if suggestedContent != "" {
+		if suggestedContent != "" && suggestedContent != document.OriginalDocument.Content {
 			originalFields["content"] = document.OriginalDocument.Content
 			updatedFields["content"] = suggestedContent
 		}
+
+		// Only proceed if we have changes
+		if len(updatedFields) == 0 {
+			continue
+		}
+
 		log.Debugf("Document %d: Original fields: %v", documentID, originalFields)
-		log.Debugf("Document %d: Updated fields: %v Tags: %v", documentID, updatedFields, tags)
+		log.Debugf("Document %d: Updated fields: %v", documentID, updatedFields)
 
 		// Marshal updated fields to JSON
 		jsonData, err := json.Marshal(updatedFields)
@@ -344,42 +375,55 @@ func (c *PaperlessClient) UpdateDocuments(ctx context.Context, documents []Docum
 			bodyBytes, _ := io.ReadAll(resp.Body)
 			log.Errorf("Error updating document %d: %d, %s", documentID, resp.StatusCode, string(bodyBytes))
 			return fmt.Errorf("error updating document %d: %d, %s", documentID, resp.StatusCode, string(bodyBytes))
-		} else {
-			for field, value := range originalFields {
-				log.Printf("Document %d: Updated %s from %v to %v", documentID, field, originalFields[field], value)
-				// Insert the modification record into the database
-				var modificationRecord ModificationHistory
-				if field == "tags" {
-					// Make sure we only store changes where tags are changed - not the same before and after
-					// And we have to use tags, not updatedFields as they are IDs not fields
-					if !hasSameTags(document.OriginalDocument.Tags, tags) {
-						modificationRecord = ModificationHistory{
-							DocumentID:    uint(documentID),
-							ModField:      field,
-							PreviousValue: string(originalTagsJSON),
-							NewValue:      string(updatedTagsJSON),
-						}
-					}
-				} else {
-					// Only store mod if field actually changed
-					if originalFields[field] != updatedFields[field] {
-						modificationRecord = ModificationHistory{
-							DocumentID:    uint(documentID),
-							ModField:      field,
-							PreviousValue: fmt.Sprintf("%v", originalFields[field]),
-							NewValue:      fmt.Sprintf("%v", updatedFields[field]),
-						}
-					}
-				}
+		} //else {
+		// 	for field, value := range originalFields {
+		// 		log.Printf("Document %d: Updated %s from %v to %v", documentID, field, originalFields[field], value)
+		// 		// Insert the modification record into the database
+		// 		var modificationRecord ModificationHistory
+		// 		if field == "tags" {
+		// 			// Make sure we only store changes where tags are changed - not the same before and after
+		// 			// And we have to use tags, not updatedFields as they are IDs not fields
+		// 			if !hasSameTags(document.OriginalDocument.Tags, tags) {
+		// 				modificationRecord = ModificationHistory{
+		// 					DocumentID:    uint(documentID),
+		// 					ModField:      field,
+		// 					PreviousValue: string(originalTagsJSON),
+		// 					NewValue:      string(updatedTagsJSON),
+		// 				}
+		// 			}
+		// 		} else {
+		// 			// Only store mod if field actually changed
+		// 			if originalFields[field] != updatedFields[field] {
+		// 				modificationRecord = ModificationHistory{
+		// 					DocumentID:    uint(documentID),
+		// 					ModField:      field,
+		// 					PreviousValue: fmt.Sprintf("%v", originalFields[field]),
+		// 					NewValue:      fmt.Sprintf("%v", updatedFields[field]),
+		// 				}
+		// 			}
+		// 		}
 
-				// Only store if we have a valid modification record
-				if (modificationRecord != ModificationHistory{}) {
-					err = InsertModification(db, &modificationRecord)
-				}
-				if err != nil {
-					log.Errorf("Error inserting modification record for document %d: %v", documentID, err)
-					return err
-				}
+		// 		// Only store if we have a valid modification record
+		// 		if (modificationRecord != ModificationHistory{}) {
+		// 			err = InsertModification(db, &modificationRecord)
+		// 		}
+		// 		if err != nil {
+		// 			log.Errorf("Error inserting modification record for document %d: %v", documentID, err)
+		// 			return err
+		// 		}
+		// 	}
+		// }
+
+		// Record modifications
+		for field, originalValue := range originalFields {
+			modificationRecord := ModificationHistory{
+				DocumentID:    uint(document.ID),
+				ModField:      field,
+				PreviousValue: fmt.Sprintf("%v", originalValue),
+				NewValue:      fmt.Sprintf("%v", updatedFields[field]),
+			}
+			if err := InsertModification(db, &modificationRecord); err != nil {
+				return fmt.Errorf("error recording modification: %w", err)
 			}
 		}
 

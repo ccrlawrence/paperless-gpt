@@ -98,7 +98,15 @@ func (app *App) getAllTagsHandler(c *gin.Context) {
 func (app *App) documentsHandler(c *gin.Context) {
 	ctx := c.Request.Context()
 
-	documents, err := app.Client.GetDocumentsByTags(ctx, []string{manualTag})
+	// Get manual review tags from DB
+	manualTags, err := GetManualReviewTags(app.Database)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Error getting manual review tags: %v", err)})
+		log.Errorf("Error getting manual review tags: %v", err)
+		return
+	}
+
+	documents, err := app.Client.GetDocumentsByTags(ctx, manualTags)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Error fetching documents: %v", err)})
 		log.Errorf("Error fetching documents: %v", err)
@@ -106,6 +114,7 @@ func (app *App) documentsHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, documents)
+
 }
 
 // generateSuggestionsHandler handles the POST /api/generate-suggestions endpoint

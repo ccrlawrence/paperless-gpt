@@ -2,24 +2,27 @@ import { ArrowPathIcon } from "@heroicons/react/24/outline";
 import React from "react";
 
 interface NoDocumentsProps {
-  filterTag: string | null;
+  filterTags: string[] | null;
   onReload: () => void;
   processing: boolean;
 }
 
 const NoDocuments: React.FC<NoDocumentsProps> = ({
-  filterTag,
+  filterTags,
   onReload,
   processing,
 }) => (
   <div className="flex flex-col items-center justify-center min-h-screen bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-200">
     <p className="text-xl font-semibold mb-4">
-      No documents found with filter tag{" "}
-      {filterTag && (
-        <span className="bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 text-sm font-medium px-2.5 py-0.5 rounded-full">
-          {filterTag}
+      No documents found with filter tag(s):{" "}
+      {(filterTags || []).map((tag) => (
+        <span 
+          key={tag} 
+          className="bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 text-sm font-medium px-2.5 py-0.5 rounded-full mx-1"
+        >
+          {tag}
         </span>
-      )}
+      ))}
       .
     </p>
     <button

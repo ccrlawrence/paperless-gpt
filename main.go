@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"os"
@@ -123,9 +122,9 @@ func main() {
 
 		backoffDuration := minBackoffDuration
 		for {
-			processedCount, err := app.processAutoTagDocuments()
+			processedCount, err := app.processWorkflows() // Changed from processAutoTagDocuments
 			if err != nil {
-				log.Errorf("Error in processAutoTagDocuments: %v", err)
+				log.Errorf("Error in workflow processing: %v", err)
 				time.Sleep(backoffDuration)
 				backoffDuration *= 2 // Exponential backoff
 				if backoffDuration > maxBackoffDuration {
@@ -153,9 +152,17 @@ func main() {
 		api.GET("/documents/:id", app.getDocumentHandler())
 		api.POST("/generate-suggestions", app.generateSuggestionsHandler)
 		api.PATCH("/update-documents", app.updateDocumentsHandler)
+
 		api.GET("/filter-tag", func(c *gin.Context) {
-			c.JSON(http.StatusOK, gin.H{"tag": manualTag})
+			tags, err := GetManualReviewTags(app.Database)
+			if err != nil {
+				log.Errorf("Failed to get manual review tags: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get manual review tags"})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{"tags": tags})
 		})
+
 		// Get all tags
 		api.GET("/tags", app.getAllTagsHandler)
 		api.GET("/prompts", getPromptsHandler)
@@ -263,42 +270,44 @@ func validateEnvVars() {
 	}
 }
 
+// Let's keep it for propesperity and debugging
 // processAutoTagDocuments handles the background auto-tagging of documents
-func (app *App) processAutoTagDocuments() (int, error) {
-	ctx := context.Background()
 
-	documents, err := app.Client.GetDocumentsByTags(ctx, []string{autoTag})
-	if err != nil {
-		return 0, fmt.Errorf("error fetching documents with autoTag: %w", err)
-	}
+// func (app *App) processAutoTagDocuments() (int, error) {
+// 	ctx := context.Background()
 
-	if len(documents) == 0 {
-		log.Debugf("No documents with tag %s found", autoTag)
-		return 0, nil // No documents to process
-	}
+// 	documents, err := app.Client.GetDocumentsByTags(ctx, []string{autoTag})
+// 	if err != nil {
+// 		return 0, fmt.Errorf("error fetching documents with autoTag: %w", err)
+// 	}
 
-	log.Debugf("Found at least %d remaining documents with tag %s", len(documents), autoTag)
+// 	if len(documents) == 0 {
+// 		log.Debugf("No documents with tag %s found", autoTag)
+// 		return 0, nil // No documents to process
+// 	}
 
-	documents = documents[:1] // Process only one document at a time
+// 	log.Debugf("Found at least %d remaining documents with tag %s", len(documents), autoTag)
 
-	suggestionRequest := GenerateSuggestionsRequest{
-		Documents:      documents,
-		GenerateTitles: true,
-		GenerateTags:   true,
-	}
+// 	documents = documents[:1] // Process only one document at a time
 
-	suggestions, err := app.generateDocumentSuggestions(ctx, suggestionRequest)
-	if err != nil {
-		return 0, fmt.Errorf("error generating suggestions: %w", err)
-	}
+// 	suggestionRequest := GenerateSuggestionsRequest{
+// 		Documents:      documents,
+// 		GenerateTitles: true,
+// 		GenerateTags:   true,
+// 	}
 
-	err = app.Client.UpdateDocuments(ctx, suggestions, app.Database, false)
-	if err != nil {
-		return 0, fmt.Errorf("error updating documents: %w", err)
-	}
+// 	suggestions, err := app.generateDocumentSuggestions(ctx, suggestionRequest)
+// 	if err != nil {
+// 		return 0, fmt.Errorf("error generating suggestions: %w", err)
+// 	}
 
-	return len(documents), nil
-}
+// 	err = app.Client.UpdateDocuments(ctx, suggestions, app.Database, false)
+// 	if err != nil {
+// 		return 0, fmt.Errorf("error updating documents: %w", err)
+// 	}
+
+// 	return len(documents), nil
+// }
 
 // removeTagFromList removes a specific tag from a list of tags
 func removeTagFromList(tags []string, tagToRemove string) []string {

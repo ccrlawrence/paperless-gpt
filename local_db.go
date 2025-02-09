@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -69,6 +71,69 @@ func InitializeDB() *gorm.DB {
 	err = db.AutoMigrate(&ModificationHistory{}, &Workflow{}, &WorkflowTrigger{}, &WorkflowAction{})
 	if err != nil {
 		log.Fatalf("Failed to migrate database schema: %v", err)
+	}
+
+	// Check there is at least the manual review entry in the workflows table
+	var workflowCount int64
+	db.Model(&Workflow{}).Count(&workflowCount)
+
+	if workflowCount == 0 {
+		log.Debug("No workflows found, creating default manual review workflow")
+
+		manualReviewWorkflow := Workflow{
+			Name:      "Manual Review Workflow",
+			RunOrder:  -1,
+			CreatedAt: time.Now().Format(time.RFC3339),
+			Triggers: []WorkflowTrigger{
+				{
+					MatchAction: "Match tags",
+					MatchData:   fmt.Sprintf(`["%s"]`, manualTag), // JSON array of tags that trigger manual review
+				},
+			},
+			Actions: []WorkflowAction{
+				{
+					ExecutionOrder: 0,
+					ActionType:     "Manual Review",
+					ActionData:     "[]",
+				},
+			},
+		}
+
+		if err := db.Create(&manualReviewWorkflow).Error; err != nil {
+			log.Fatalf("Failed to create default manual review workflow: %v", err)
+		}
+		log.Debug("Default manual review workflow created")
+
+		log.Debug("Creating auto review workflow")
+		autoReviewWorkflow := Workflow{
+			Name:      "Auto Workflow",
+			RunOrder:  0,
+			CreatedAt: time.Now().Format(time.RFC3339),
+			Triggers: []WorkflowTrigger{
+				{
+					MatchAction: "Match tags",
+					MatchData:   fmt.Sprintf(`["%s"]`, autoTag), // JSON array of tags that trigger manual review
+				},
+			},
+			Actions: []WorkflowAction{
+				{
+					ExecutionOrder: 0,
+					ActionType:     "Auto title",
+					ActionData:     "[]",
+				},
+				{
+					ExecutionOrder: 1,
+					ActionType:     "Auto tag",
+					ActionData:     "[]",
+				},
+			},
+		}
+
+		if err := db.Create(&autoReviewWorkflow).Error; err != nil {
+			log.Fatalf("Failed to create default auto review workflow: %v", err)
+		}
+
+		log.Debug("Default auto review workflow created")
 	}
 
 	return db
@@ -157,4 +222,30 @@ func DeleteAllWorkflows(db *gorm.DB) error {
 
 		return nil
 	})
+}
+
+// Get manual review tag from DB for filter-tag
+func GetManualReviewTags(db *gorm.DB) ([]string, error) {
+	var workflow Workflow
+	// Add Preload to load the Triggers association
+	result := db.Preload("Triggers").Where("run_order = -1").First(&workflow)
+	if result.Error != nil {
+		return nil, fmt.Errorf("failed to find workflow: %v", result.Error)
+	}
+
+	if len(workflow.Triggers) == 0 {
+		return nil, fmt.Errorf("no triggers found for manual review workflow")
+	}
+
+	for _, trigger := range workflow.Triggers {
+		if trigger.MatchAction == "Match tags" {
+			var tags []string
+			if err := json.Unmarshal([]byte(trigger.MatchData), &tags); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal tags: %v", err)
+			}
+			return tags, nil
+		}
+	}
+
+	return nil, fmt.Errorf("no manual review tag found")
 }
